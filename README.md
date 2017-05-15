@@ -1,26 +1,24 @@
 [![Build Status][ci-img]][ci] [![Released Version][maven-img]][maven]
 
-# OpenTracing Okhttp Client Instrumentation
-OpenTracing instrumentation for Okhttp client.
+# OpenTracing OkHttp Client Instrumentation
+OpenTracing instrumentation for OkHttp client.
 
 ## Configuration & Usage
 ```java
-TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer, Arrays.asList(SpanDecorators.STANDARD_TAGS));
+OkHttpClient client = TracingInerceptor.addTracing(new OkHttpClient.Builder(), tracer)
+```
+or
+```java
+TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer);
 
 OkHttpClient client = OkHttpClient.Builder()
+    .dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), mockTracer)))
     .addInterceptor(tracingInterceptor)
     .addNetworkInterceptor(tracingInterceptor)
     .build();
-
-// create traced request 
-client.newCall(new Request.Builder()
-        .url("http://localhost/foo")
-        // optional: client span started in inteceptor will be child of provided SpanContext
-        // by default client span is in new trace
-        .tag(new TagWrapper(parentSpan.context())) 
-        .build())
-    .execute();
 ```
+
+Then all created requests will be traced.
 
 ## Development
 ```shell

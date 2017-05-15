@@ -1,21 +1,19 @@
 package io.opentracing.contrib.okhttp3;
 
-import io.opentracing.Span;
-import io.opentracing.mock.MockSpan;
-import io.opentracing.mock.MockTracer;
-import io.opentracing.tag.Tags;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
-import okhttp3.Call;
-import okhttp3.Callback;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
+
 import org.awaitility.Awaitility;
 import org.hamcrest.core.IsEqual;
 import org.junit.After;
@@ -23,24 +21,34 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import io.opentracing.ActiveSpan;
+import io.opentracing.mock.MockSpan;
+import io.opentracing.mock.MockTracer;
+import io.opentracing.tag.Tags;
+import io.opentracing.util.ThreadLocalActiveSpanSource;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+
 /**
+ * Tracing instrumentation for OkHttp client.
+ *
+ * add as
+ *
  * @author Pavol Loffay
  */
 public class TracingInterceptorTest {
 
-    private MockTracer mockTracer = new MockTracer();
+    private MockTracer mockTracer = new MockTracer(new ThreadLocalActiveSpanSource(), MockTracer.Propagator.TEXT_MAP);
     private MockWebServer mockWebServer = new MockWebServer();
     private OkHttpClient okHttpClient;
 
     public TracingInterceptorTest() {
-        TracingInterceptor tracingInterceptor =
-                new TracingInterceptor(mockTracer, Arrays.asList(SpanDecorator.STANDARD_TAGS));
-
-        okHttpClient = new OkHttpClient.Builder()
-                .addInterceptor(tracingInterceptor)
-                .addNetworkInterceptor(tracingInterceptor)
-                .followRedirects(true)
-                .build();
+        okHttpClient = TracingInterceptor.addTracing(new OkHttpClient.Builder(), mockTracer);
     }
 
     @Before
@@ -60,6 +68,7 @@ public class TracingInterceptorTest {
             mockWebServer.enqueue(new MockResponse()
                     .setResponseCode(202));
 
+            Call.Factory fac = okHttpClient;
             okHttpClient.newCall(new Request.Builder()
                     .url(mockWebServer.url("foo"))
                     .build())
@@ -121,6 +130,67 @@ public class TracingInterceptorTest {
     }
 
     @Test
+    public void testAsyncMultipleRequests() throws ExecutionException, InterruptedException {
+        int numberOfCalls = 1;
+
+        Map<Long, MockSpan> parentSpans = new LinkedHashMap<>(numberOfCalls);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(100);
+        List<Future<?>> futures = new ArrayList<>(numberOfCalls);
+        for (int i = 0; i < numberOfCalls; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(200));
+
+            final String requestUrl = mockWebServer.url("foo/" + i).toString();
+
+            final MockSpan parentSpan = mockTracer.buildSpan("foo")
+                    .ignoreActiveSpan().start();
+            parentSpan.setTag("request-url", requestUrl);
+            parentSpans.put(parentSpan.context().spanId(), parentSpan);
+
+            futures.add(executorService.submit(new Runnable() {
+                @Override
+                public void run() {
+                    ActiveSpan activeParent = mockTracer.makeActive(parentSpan);
+                    okHttpClient.newCall(new Request.Builder()
+                            .url(requestUrl)
+                            .build())
+                            .enqueue(new Callback() {
+                                @Override
+                                public void onFailure(Call call, IOException e) {}
+                                @Override
+                                public void onResponse(Call call, Response response) throws IOException {}
+                            });
+                }
+            }));
+        }
+
+        // wait to finish all calls
+        for (Future<?> future: futures) {
+            future.get();
+        }
+
+        executorService.awaitTermination(1, TimeUnit.SECONDS);
+        executorService.shutdown();
+
+        List<MockSpan> mockSpans = mockTracer.finishedSpans();
+        assertOnErrors(mockSpans);
+        Assert.assertEquals(numberOfCalls, mockSpans.size());
+
+        for (int i = 0; i < numberOfCalls; i++) {
+            MockSpan childSpan = mockSpans.get(i);
+            MockSpan parentSpan = parentSpans.get(childSpan.parentId());
+
+            Assert.assertEquals(parentSpan.tags().get("request-url"), childSpan.tags().get(Tags.HTTP_URL.getKey()));
+
+            Assert.assertEquals(parentSpan.context().traceId(), childSpan.context().traceId());
+            Assert.assertEquals(parentSpan.context().spanId(), childSpan.parentId());
+            Assert.assertEquals(0, childSpan.generatedErrors().size());
+            Assert.assertEquals(0, parentSpan.generatedErrors().size());
+        }
+    }
+
+    @Test
     public void testUnknownHostException() throws IOException {
         {
             Request request = new Request.Builder()
@@ -145,18 +215,16 @@ public class TracingInterceptorTest {
         Assert.assertEquals("http://nonexisting.example.com/", mockSpan.tags().get(Tags.HTTP_URL.getKey()));
         Assert.assertEquals(Boolean.TRUE, mockSpan.tags().get(Tags.ERROR.getKey()));
         Assert.assertEquals(1, mockSpan.logEntries().size());
-        Assert.assertEquals(4, mockSpan.logEntries().get(0).fields().size());
+        Assert.assertEquals(2, mockSpan.logEntries().get(0).fields().size());
         Assert.assertEquals(Tags.ERROR.getKey(), mockSpan.logEntries().get(0).fields().get("event"));
-        Assert.assertNotNull(mockSpan.logEntries().get(0).fields().get("message"));
-        Assert.assertNotNull(mockSpan.logEntries().get(0).fields().get("stack"));
-        Assert.assertNotNull(mockSpan.logEntries().get(0).fields().get("error.kind"));
+        Assert.assertNotNull(mockSpan.logEntries().get(0).fields().get("error.object"));
     }
 
     @Test
-    public void testParentSpan() throws IOException {
+    public void testParentSpanSource() throws IOException {
         {
-            Span parent = mockTracer.buildSpan("parent")
-                    .start();
+            ActiveSpan parent = mockTracer.buildSpan("parent")
+                    .startActive();
 
             mockWebServer.enqueue(new MockResponse()
                     .setResponseCode(203));
@@ -168,7 +236,7 @@ public class TracingInterceptorTest {
                     .build();
 
             okHttpClient.newCall(request).execute();
-            parent.finish();
+            parent.close();
         }
 
         List<MockSpan> mockSpans = mockTracer.finishedSpans();
@@ -220,7 +288,7 @@ public class TracingInterceptorTest {
                     .build();
 
             TracingInterceptor tracingInterceptor =
-                    new TracingInterceptor(mockTracer, Arrays.asList(SpanDecorator.STANDARD_TAGS));
+                    new TracingInterceptor(mockTracer, Arrays.asList(OkHttpClientSpanDecorator.STANDARD_TAGS));
             OkHttpClient okHttpClient = new OkHttpClient.Builder()
                     .addInterceptor(tracingInterceptor)
                     .addNetworkInterceptor(tracingInterceptor)

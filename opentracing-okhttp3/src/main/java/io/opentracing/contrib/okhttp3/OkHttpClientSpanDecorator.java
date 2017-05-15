@@ -1,13 +1,11 @@
 package io.opentracing.contrib.okhttp3;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.net.Inet4Address;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
-import io.opentracing.Span;
+import io.opentracing.BaseSpan;
 import io.opentracing.tag.Tags;
 import okhttp3.Connection;
 import okhttp3.Request;
@@ -18,7 +16,7 @@ import okhttp3.Response;
  *
  * @author Pavol Loffay
  */
-public interface SpanDecorator {
+public interface OkHttpClientSpanDecorator {
 
     /**
      * Decorate span before a request is made.
@@ -26,7 +24,7 @@ public interface SpanDecorator {
      * @param request request
      * @param span span
      */
-    void onRequest(Request request, Span span);
+    void onRequest(Request request, BaseSpan<?> span);
 
     /**
      * Decorate span after request is made.
@@ -34,7 +32,7 @@ public interface SpanDecorator {
      * @param response response
      * @param span span
      */
-    void onResponse(Response response, Span span);
+    void onResponse(Response response, BaseSpan<?> span);
 
     /**
      * Decorate span on an error e.g. {@link java.net.UnknownHostException} or any exception in interceptor.
@@ -42,7 +40,7 @@ public interface SpanDecorator {
      * @param throwable exception
      * @param span span
      */
-    void onError(Throwable throwable, Span span);
+    void onError(Throwable throwable, BaseSpan<?> span);
 
     /**
      * This is invoked after {@link okhttp3.Interceptor.Chain#proceed(Request)} in network interceptor.
@@ -52,7 +50,7 @@ public interface SpanDecorator {
      * @param response response
      * @param span span
      */
-    void onNetworkResponse(Connection connection, Response response, Span span);
+    void onNetworkResponse(Connection connection, Response response, BaseSpan<?> span);
 
     /**
      * Decorator which adds standard HTTP and peer tags to the span.
@@ -61,27 +59,27 @@ public interface SpanDecorator {
      * on redirects adds log entries with peer tags.
      *
      */
-    SpanDecorator STANDARD_TAGS = new SpanDecorator() {
+    OkHttpClientSpanDecorator STANDARD_TAGS = new OkHttpClientSpanDecorator() {
         @Override
-        public void onRequest(Request request, Span span) {
+        public void onRequest(Request request, BaseSpan<?> span) {
             Tags.COMPONENT.set(span, "java-okhttp");
             Tags.HTTP_METHOD.set(span, request.method());
             Tags.HTTP_URL.set(span, request.url().toString());
         }
 
         @Override
-        public void onResponse(Response response, Span span) {
+        public void onResponse(Response response, BaseSpan<?> span) {
             Tags.HTTP_STATUS.set(span, response.code());
         }
 
         @Override
-        public void onError(Throwable throwable, Span span) {
+        public void onError(Throwable throwable, BaseSpan<?> span) {
             Tags.ERROR.set(span, Boolean.TRUE);
             span.log(errorLogs(throwable));
         }
 
         @Override
-        public void onNetworkResponse(Connection connection, Response response, Span span) {
+        public void onNetworkResponse(Connection connection, Response response, BaseSpan<?> span) {
             if (response.isRedirect()) {
                 Map<String, Object> redirectLogs = new HashMap<>(4);
                 redirectLogs.put("event", "redirect");
@@ -109,18 +107,10 @@ public interface SpanDecorator {
             }
         }
 
-        protected Map<String, String> errorLogs(Throwable throwable) {
-            Map<String, String> errorLogs = new HashMap<>(4);
+        protected Map<String, Object> errorLogs(Throwable throwable) {
+            Map<String, Object> errorLogs = new HashMap<>(2);
             errorLogs.put("event", Tags.ERROR.getKey());
-            errorLogs.put("error.kind", throwable.getClass().getName());
-
-            String exMessage = throwable.getCause() != null ? throwable.getCause().getMessage() :
-                    throwable.getMessage();
-            errorLogs.put("message", exMessage);
-
-            StringWriter sw = new StringWriter();
-            throwable.printStackTrace(new PrintWriter(sw));
-            errorLogs.put("stack", sw.toString());
+            errorLogs.put("error.object", throwable);
 
             return errorLogs;
         }
