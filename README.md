@@ -3,7 +3,7 @@
 # OpenTracing OkHttp Client Instrumentation
 OpenTracing instrumentation for OkHttp client.
 
-## Configuration & Usage
+## Configuration
 ```java
 OkHttpClient client = TracingInerceptor.addTracing(new OkHttpClient.Builder(), tracer)
 ```
