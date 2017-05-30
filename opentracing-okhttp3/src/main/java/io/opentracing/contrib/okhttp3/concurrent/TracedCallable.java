@@ -8,7 +8,7 @@ import io.opentracing.NoopActiveSpanSource;
 /**
  * @author Pavol Loffay
  */
-public class TracedCallable<V> implements Callable<V> {
+class TracedCallable<V> implements Callable<V> {
 
     private final Callable<V> delegate;
     private final ActiveSpan.Continuation continuation;

@@ -6,7 +6,7 @@ import io.opentracing.NoopActiveSpanSource;
 /**
  * @author Pavol Loffay
  */
-public class TracedRunnable implements Runnable {
+class TracedRunnable implements Runnable {
 
     private final Runnable delegate;
     private final ActiveSpan.Continuation continuation;
