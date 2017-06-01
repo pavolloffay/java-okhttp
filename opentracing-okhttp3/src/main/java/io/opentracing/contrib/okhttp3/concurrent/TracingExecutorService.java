@@ -66,6 +66,12 @@ public class TracingExecutorService implements ExecutorService {
     }
 
     @Override
+    public void execute(Runnable runnable) {
+        delegate.execute(new TracedRunnable(runnable, tracer.activeSpan()));
+    }
+
+
+    @Override
     public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> collection) throws InterruptedException {
         return delegate.invokeAll(toTraced(collection));
     }
@@ -79,18 +85,13 @@ public class TracingExecutorService implements ExecutorService {
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> collection)
             throws InterruptedException, ExecutionException {
-        return delegate.invokeAny(collection);
+        return delegate.invokeAny(toTraced(collection));
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> collection, long l, TimeUnit timeUnit)
             throws InterruptedException, ExecutionException, TimeoutException {
-        return delegate.invokeAny(collection, l, timeUnit);
-    }
-
-    @Override
-    public void execute(Runnable runnable) {
-        delegate.execute(new TracedRunnable(runnable, tracer.activeSpan()));
+        return delegate.invokeAny(toTraced(collection), l, timeUnit);
     }
 
     private <C> Collection<? extends Callable<C>> toTraced(Collection<? extends Callable<C>> delegate) {

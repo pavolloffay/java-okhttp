@@ -13,16 +13,20 @@ class TracedRunnable implements Runnable {
     
     public TracedRunnable(Runnable delegate, ActiveSpan activeSpan) {
         this.delegate = delegate;
-        this.continuation = activeSpan != null ? activeSpan.capture() : NoopActiveSpanSource.NoopContinuation.INSTANCE;
+
+        // TODO REMOVE
+        if (activeSpan == null) {
+            throw new IllegalStateException();
+        }
+
+        this.continuation = activeSpan != null ? activeSpan.capture() : NoopActiveSpanSource.NoopContinuation
+                .INSTANCE;
     }
 
     @Override
     public void run() {
-        ActiveSpan activeSpan = continuation.activate();
-        try {
+        try (ActiveSpan activeSpan = continuation.activate()) {
             delegate.run();
-        } finally {
-            activeSpan.close();
         }
     }
 }

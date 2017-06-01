@@ -20,11 +20,8 @@ class TracedCallable<V> implements Callable<V> {
 
     @Override
     public V call() throws Exception {
-        ActiveSpan activeSpan = continuation.activate();
-        try {
+        try (ActiveSpan activeSpan = continuation.activate()) {
             return delegate.call();
-        } finally {
-            activeSpan.close();
         }
     }
 }

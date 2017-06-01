@@ -62,7 +62,6 @@ public interface OkHttpClientSpanDecorator {
     OkHttpClientSpanDecorator STANDARD_TAGS = new OkHttpClientSpanDecorator() {
         @Override
         public void onRequest(Request request, BaseSpan<?> span) {
-            Tags.COMPONENT.set(span, "java-okhttp");
             Tags.HTTP_METHOD.set(span, request.method());
             Tags.HTTP_URL.set(span, request.url().toString());
         }
@@ -80,30 +79,15 @@ public interface OkHttpClientSpanDecorator {
 
         @Override
         public void onNetworkResponse(Connection connection, Response response, BaseSpan<?> span) {
-            if (response.isRedirect()) {
-                Map<String, Object> redirectLogs = new HashMap<>(4);
-                redirectLogs.put("event", "redirect");
-                redirectLogs.put(Tags.PEER_HOSTNAME.getKey(), connection.socket().getInetAddress().getHostName());
-                redirectLogs.put(Tags.PEER_PORT.getKey(), connection.socket().getPort());
+            Tags.HTTP_STATUS.set(span, response.code());
+            Tags.PEER_HOSTNAME.set(span, connection.socket().getInetAddress().getHostName());
+            Tags.PEER_PORT.set(span, connection.socket().getPort());
 
-                if (connection.socket().getInetAddress() instanceof Inet4Address) {
-                    byte[] address = connection.socket().getInetAddress().getAddress();
-                    redirectLogs.put(Tags.PEER_HOST_IPV4.getKey(), ByteBuffer.wrap(address).getInt());
-                } else {
-                    redirectLogs.put(Tags.PEER_HOST_IPV6.getKey(), connection.socket().getInetAddress().getHostAddress());
-                }
-
-                span.log(redirectLogs);
+            if (connection.socket().getInetAddress() instanceof Inet4Address) {
+                byte[] address = connection.socket().getInetAddress().getAddress();
+                Tags.PEER_HOST_IPV4.set(span, ByteBuffer.wrap(address).getInt());
             } else {
-                Tags.PEER_HOSTNAME.set(span, connection.socket().getInetAddress().getHostName());
-                Tags.PEER_PORT.set(span, connection.socket().getPort());
-
-                if (connection.socket().getInetAddress() instanceof Inet4Address) {
-                    byte[] address = connection.socket().getInetAddress().getAddress();
-                    Tags.PEER_HOST_IPV4.set(span, ByteBuffer.wrap(address).getInt());
-                } else {
-                    Tags.PEER_HOST_IPV6.set(span, connection.socket().getInetAddress().toString());
-                }
+                Tags.PEER_HOST_IPV6.set(span, connection.socket().getInetAddress().toString());
             }
         }
 

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 import io.opentracing.ActiveSpan;
@@ -42,7 +43,7 @@ public class TracingInterceptor implements Interceptor {
         TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer);
         return builder.addInterceptor(tracingInterceptor)
                 .addNetworkInterceptor(tracingInterceptor)
-                .dispatcher(new Dispatcher(new TracingExecutorService(new Dispatcher().executorService(), tracer)))
+                .dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), tracer)))
                 .build();
     }
 
@@ -90,10 +91,14 @@ public class TracingInterceptor implements Interceptor {
 
         // application interceptor?
         if (chain.connection() == null) {
+
+            ActiveSpan activeSpan = tracer.activeSpan();
+            System.out.println(activeSpan + chain.request().toString());
+            System.out.flush();
+
             ActiveSpan span = tracer.buildSpan(chain.request().method())
                     .withTag(Tags.SPAN_KIND.getKey(), Tags.SPAN_KIND_CLIENT)
                     .startActive();
-
 
             for (OkHttpClientSpanDecorator spanDecorator: decorators) {
                 spanDecorator.onRequest(chain.request(), span);
