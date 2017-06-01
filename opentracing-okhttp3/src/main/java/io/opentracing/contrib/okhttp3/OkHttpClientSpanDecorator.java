@@ -27,14 +27,6 @@ public interface OkHttpClientSpanDecorator {
     void onRequest(Request request, BaseSpan<?> span);
 
     /**
-     * Decorate span after request is made.
-     *
-     * @param response response
-     * @param span span
-     */
-    void onResponse(Response response, BaseSpan<?> span);
-
-    /**
      * Decorate span on an error e.g. {@link java.net.UnknownHostException} or any exception in interceptor.
      *
      * @param throwable exception
@@ -50,7 +42,7 @@ public interface OkHttpClientSpanDecorator {
      * @param response response
      * @param span span
      */
-    void onNetworkResponse(Connection connection, Response response, BaseSpan<?> span);
+    void onResponse(Connection connection, Response response, BaseSpan<?> span);
 
     /**
      * Decorator which adds standard HTTP and peer tags to the span.
@@ -67,18 +59,13 @@ public interface OkHttpClientSpanDecorator {
         }
 
         @Override
-        public void onResponse(Response response, BaseSpan<?> span) {
-            Tags.HTTP_STATUS.set(span, response.code());
-        }
-
-        @Override
         public void onError(Throwable throwable, BaseSpan<?> span) {
             Tags.ERROR.set(span, Boolean.TRUE);
             span.log(errorLogs(throwable));
         }
 
         @Override
-        public void onNetworkResponse(Connection connection, Response response, BaseSpan<?> span) {
+        public void onResponse(Connection connection, Response response, BaseSpan<?> span) {
             Tags.HTTP_STATUS.set(span, response.code());
             Tags.PEER_HOSTNAME.set(span, connection.socket().getInetAddress().getHostName());
             Tags.PEER_PORT.set(span, connection.socket().getPort());

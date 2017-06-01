@@ -10,7 +10,6 @@ import java.util.logging.Logger;
 import io.opentracing.ActiveSpan;
 import io.opentracing.Tracer;
 import io.opentracing.contrib.okhttp3.concurrent.TracingExecutorService;
-import io.opentracing.propagation.Format;
 import io.opentracing.tag.Tags;
 import okhttp3.Dispatcher;
 import okhttp3.Interceptor;
@@ -19,18 +18,14 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
- * Okhttp interceptor to trace client requests. Interceptor adds span context into outgoing requests.
- * By default span operation name is set to HTTP method.
+ * OkHttp interceptor to trace client requests. Interceptor adds span context into outgoing requests.
+ * Please this instrumentation only when {@link TracingCallFactory} is not possible to use. This
+ * instrumentation fails properly infer parent span when doing simultaneously asynchronous calls.
  *
  * <p>Initialization via {@link TracingInterceptor#addTracing(OkHttpClient.Builder, Tracer, List)}
  *
  * <p>or instantiate the interceptor and add it to {@link OkHttpClient.Builder#addInterceptor(Interceptor)} and
  * {@link OkHttpClient.Builder#addNetworkInterceptor(Interceptor)}.
- *
- * <p> Created span is by default in a new trace,
- * if you want to connect it with a parent span, then add parent {@link TagWrapper} with
- * parent {@link io.opentracing.SpanContext} to {@link Request.Builder#tag(Object)}.
- *
  * @author Pavol Loffay
  */
 public class TracingInterceptor implements Interceptor {
@@ -41,10 +36,10 @@ public class TracingInterceptor implements Interceptor {
 
     public static OkHttpClient addTracing(OkHttpClient.Builder builder, Tracer tracer) {
         TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer);
-        return builder.addInterceptor(tracingInterceptor)
-                .addNetworkInterceptor(tracingInterceptor)
-                .dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), tracer)))
-                .build();
+        builder.interceptors().add(0, tracingInterceptor);
+        builder.networkInterceptors().add(0, tracingInterceptor);
+        builder.dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), tracer)));
+        return builder.build();
     }
 
     /**
@@ -87,25 +82,15 @@ public class TracingInterceptor implements Interceptor {
 
     @Override
     public Response intercept(Chain chain) throws IOException {
-        Response response;
+        Response response = null;
 
         // application interceptor?
         if (chain.connection() == null) {
-
-            ActiveSpan activeSpan = tracer.activeSpan();
-            System.out.println(activeSpan + chain.request().toString());
-            System.out.flush();
-
             ActiveSpan span = tracer.buildSpan(chain.request().method())
-                    .withTag(Tags.SPAN_KIND.getKey(), Tags.SPAN_KIND_CLIENT)
+                    .withTag(Tags.COMPONENT.getKey(), TracingCallFactory.COMPONENT_NAME)
                     .startActive();
 
-            for (OkHttpClientSpanDecorator spanDecorator: decorators) {
-                spanDecorator.onRequest(chain.request(), span);
-            }
-
             Request.Builder requestBuilder = chain.request().newBuilder();
-            tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new RequestBuilderInjectAdapter(requestBuilder));
 
             Object tag = chain.request().tag();
             TagWrapper tagWrapper = tag instanceof TagWrapper
@@ -114,10 +99,6 @@ public class TracingInterceptor implements Interceptor {
 
             try {
                 response = chain.proceed(requestBuilder.build());
-
-                for (OkHttpClientSpanDecorator spanDecorator: decorators) {
-                    spanDecorator.onResponse(response, span);
-                }
             } catch (Throwable ex) {
                 for (OkHttpClientSpanDecorator spanDecorator: decorators) {
                     spanDecorator.onError(ex, span);
@@ -127,15 +108,13 @@ public class TracingInterceptor implements Interceptor {
                 span.deactivate();
             }
         } else {
-            response = chain.proceed(chain.request());
-            Object tag = response.request().tag();
+            Object tag = chain.request().tag();
             if (tag instanceof TagWrapper) {
                 TagWrapper tagWrapper = (TagWrapper) tag;
-                for (OkHttpClientSpanDecorator spanDecorator: decorators) {
-                    spanDecorator.onNetworkResponse(chain.connection(), response, tagWrapper.getSpan());
-                }
+                response = new TracingCallFactory.NetworkInterceptor(tracer, tagWrapper.getSpan().context(), decorators)
+                        .intercept(chain);
             } else {
-                log.severe("tag is null or not an instance of TagWrapper, skipping decorator onNetworkResponse()");
+                log.severe("tag is null or not an instance of TagWrapper, skipping decorator onResponse()");
             }
         }
 

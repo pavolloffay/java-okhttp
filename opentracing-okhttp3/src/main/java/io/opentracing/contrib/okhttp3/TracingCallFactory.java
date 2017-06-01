@@ -17,9 +17,12 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
+ * OkHttp client instrumentation.
+ *
  * @author Pavol Loffay
  */
 public class TracingCallFactory implements Call.Factory {
+    static final String COMPONENT_NAME = "okhttp";
 
     private OkHttpClient okHttpClient;
 
@@ -47,14 +50,14 @@ public class TracingCallFactory implements Call.Factory {
         ActiveSpan activeSpan = null;
         try {
             activeSpan = tracer.buildSpan(request.method())
-                    .withTag(Tags.COMPONENT.getKey(), "okhttp")
+                    .withTag(Tags.COMPONENT.getKey(), COMPONENT_NAME)
                     .startActive();
 
-            OkHttpClient.Builder okBuilder = okHttpClient.newBuilder();
             /**
              * In case of exception network interceptor is not called
              */
-            okBuilder.networkInterceptors().add(0, new NetworkInterceptor(activeSpan.context()));
+            OkHttpClient.Builder okBuilder = okHttpClient.newBuilder();
+            okBuilder.networkInterceptors().add(0, new NetworkInterceptor(tracer, activeSpan.context(), decorators));
 
             final ActiveSpan.Continuation continuation = activeSpan.capture();
             okBuilder.interceptors().add(0, new Interceptor() {
@@ -84,11 +87,15 @@ public class TracingCallFactory implements Call.Factory {
         }
     }
 
-    class NetworkInterceptor implements Interceptor {
+    static class NetworkInterceptor implements Interceptor {
         public SpanContext parentContext;
+        public Tracer tracer;
+        public List<OkHttpClientSpanDecorator> decorators;
 
-        NetworkInterceptor(SpanContext spanContext) {
+        NetworkInterceptor(Tracer tracer, SpanContext spanContext, List<OkHttpClientSpanDecorator> decorators) {
             this.parentContext = spanContext;
+            this.tracer = tracer;
+            this.decorators = decorators;
         }
 
         @Override
@@ -107,7 +114,7 @@ public class TracingCallFactory implements Call.Factory {
                 Response response = chain.proceed(requestBuilder.build());
 
                 for (OkHttpClientSpanDecorator spanDecorator: decorators) {
-                    spanDecorator.onNetworkResponse(chain.connection(), response, networkSpan);
+                    spanDecorator.onResponse(chain.connection(), response, networkSpan);
                 }
 
                 return response;

@@ -4,21 +4,17 @@
 OpenTracing instrumentation for OkHttp client.
 
 ## Configuration
+Preferred way how to instrument OkHttpClient is to use `TracingCallFactory`:
+```java
+Call.Factory callFactory = new TracingCallFactory(okHttpClient, tracer);
+client.newCall(request)...
+```
+or use OkHttpClient directly. However when doing multiple async requests simultaneously, parent spans created
+before invoking the client are not properly inferred.
 ```java
 OkHttpClient client = TracingInerceptor.addTracing(new OkHttpClient.Builder(), tracer)
+client.newCall(request)...
 ```
-or
-```java
-TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer);
-
-OkHttpClient client = OkHttpClient.Builder()
-    .dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), mockTracer)))
-    .addInterceptor(tracingInterceptor)
-    .addNetworkInterceptor(tracingInterceptor)
-    .build();
-```
-
-Then all created requests will be traced.
 
 ## Development
 ```shell

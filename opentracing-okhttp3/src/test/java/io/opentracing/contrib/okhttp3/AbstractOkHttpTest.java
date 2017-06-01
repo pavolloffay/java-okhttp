@@ -28,7 +28,6 @@ import io.opentracing.tag.Tags;
 import io.opentracing.util.ThreadLocalActiveSpanSource;
 import okhttp3.Call;
 import okhttp3.Callback;
-import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.mockwebserver.MockResponse;
@@ -127,11 +126,11 @@ public abstract class AbstractOkHttpTest {
 
     @Test
     public void testAsyncMultipleRequests() throws ExecutionException, InterruptedException {
-        int numberOfCalls = 8;
+        int numberOfCalls = 100;
 
         Map<Long, MockSpan> parentSpans = new LinkedHashMap<>(numberOfCalls);
 
-        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        ExecutorService executorService = Executors.newFixedThreadPool(8);
         List<Future<?>> futures = new ArrayList<>(numberOfCalls);
         for (int i = 0; i < numberOfCalls; i++) {
             final String requestUrl = mockWebServer.url("foo/" + i).toString();
@@ -204,7 +203,7 @@ public abstract class AbstractOkHttpTest {
 
         Map<Long, MockSpan> parentSpans = new LinkedHashMap<>(numberOfCalls);
 
-        ExecutorService executorService = Executors.newFixedThreadPool(20);
+        ExecutorService executorService = Executors.newFixedThreadPool(8);
         List<Future<?>> futures = new ArrayList<>(numberOfCalls);
         for (int i = 0; i < numberOfCalls; i++) {
             final String requestUrl = mockWebServer.url("foo/" + i).toString();
@@ -277,7 +276,6 @@ public abstract class AbstractOkHttpTest {
             try {
                 client.newCall(request).execute();
             } catch (Exception ex) {
-                System.out.println("cecek");
             }
         }
 
@@ -353,36 +351,6 @@ public abstract class AbstractOkHttpTest {
         Assert.assertEquals(mockWebServer.getPort(), networkSpan.tags().get(Tags.PEER_PORT.getKey()));
         Assert.assertEquals(ipv4ToInt("127.0.0.1"), networkSpan.tags().get(Tags.PEER_HOST_IPV4.getKey()));
         Assert.assertEquals("localhost", networkSpan.tags().get(Tags.PEER_HOSTNAME.getKey()));
-    }
-
-    @Test
-    public void testFollowRedirectsFalse() throws IOException {
-        {
-            mockWebServer.enqueue(new MockResponse().setResponseCode(301).setHeader("Location", "/redirect"));
-            mockWebServer.enqueue(new MockResponse().setResponseCode(200).setBody("after redirect"));
-
-            Request request = new Request.Builder()
-                    .url(mockWebServer.url("bar"))
-                    .get()
-                    .build();
-
-            Call.Factory client = new TracingCallFactory(new OkHttpClient.Builder()
-                    .followRedirects(false)
-                    .build(),
-                mockTracer);
-            client.newCall(request).execute();
-        }
-
-        List<MockSpan> mockSpans = mockTracer.finishedSpans();
-        Assert.assertEquals(2, mockSpans.size());
-        assertOnErrors(mockSpans);
-
-        MockSpan networkSpan = mockSpans.get(0);
-        Assert.assertEquals(301, networkSpan.tags().get(Tags.HTTP_STATUS.getKey()));
-        Assert.assertEquals(mockWebServer.url("bar").toString(), networkSpan.tags().get(Tags.HTTP_URL.getKey()));
-        Assert.assertEquals("localhost", networkSpan.tags().get(Tags.PEER_HOSTNAME.getKey()));
-        Assert.assertEquals(mockWebServer.getPort(), networkSpan.tags().get(Tags.PEER_PORT.getKey()));
-        Assert.assertEquals(ipv4ToInt("127.0.0.1"), networkSpan.tags().get(Tags.PEER_HOST_IPV4.getKey()));
     }
 
     protected void assertLocalSpan(List<MockSpan> mockSpans) {

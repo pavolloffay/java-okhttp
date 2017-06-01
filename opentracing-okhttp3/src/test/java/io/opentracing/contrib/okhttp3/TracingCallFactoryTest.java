@@ -9,14 +9,15 @@ import okhttp3.OkHttpClient;
 /**
  * @author Pavol Loffay
  */
-public class CallFactoryTest extends AbstractOkHttpTest {
+public class TracingCallFactoryTest extends AbstractOkHttpTest {
 
-    public CallFactoryTest() {
+    public TracingCallFactoryTest() {
         super(new TracingCallFactory(new OkHttpClient(), AbstractOkHttpTest.mockTracer));
     }
 
     @Before
     public void before() throws IOException {
         super.before();
+
     }
 }
