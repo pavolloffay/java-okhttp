@@ -63,16 +63,16 @@ public class TracingCallFactory implements Call.Factory {
             okBuilder.interceptors().add(0, new Interceptor() {
                 @Override
                 public Response intercept(Chain chain) throws IOException {
-                    ActiveSpan activate = continuation.activate();
+                    ActiveSpan activeInterceptorSpan = continuation.activate();
                     try {
                         return chain.proceed(chain.request());
                     } catch (Exception ex) {
                         for (OkHttpClientSpanDecorator spanDecorator : decorators) {
-                            spanDecorator.onError(ex, activate);
+                            spanDecorator.onError(ex, activeInterceptorSpan);
                         }
                         throw ex;
                     } finally {
-                        activate.deactivate();
+                        activeInterceptorSpan.deactivate();
                     }
                 }
             });

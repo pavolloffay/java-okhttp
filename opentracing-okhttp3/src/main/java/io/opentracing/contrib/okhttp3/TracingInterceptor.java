@@ -19,8 +19,8 @@ import okhttp3.Response;
 
 /**
  * OkHttp interceptor to trace client requests. Interceptor adds span context into outgoing requests.
- * Please this instrumentation only when {@link TracingCallFactory} is not possible to use. This
- * instrumentation fails properly infer parent span when doing simultaneously asynchronous calls.
+ * Please only use this instrumentation when {@link TracingCallFactory} is not possible to use. This
+ * instrumentation fails to properly infer parent span when doing simultaneously asynchronous calls.
  *
  * <p>Initialization via {@link TracingInterceptor#addTracing(OkHttpClient.Builder, Tracer, List)}
  *
@@ -34,13 +34,6 @@ public class TracingInterceptor implements Interceptor {
     private Tracer tracer;
     private List<OkHttpClientSpanDecorator> decorators;
 
-    public static OkHttpClient addTracing(OkHttpClient.Builder builder, Tracer tracer) {
-        TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer);
-        builder.interceptors().add(0, tracingInterceptor);
-        builder.networkInterceptors().add(0, tracingInterceptor);
-        builder.dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), tracer)));
-        return builder.build();
-    }
 
     /**
      * Create tracing interceptor. Interceptor has to be added to {@link OkHttpClient.Builder#addInterceptor(Interceptor)}
@@ -64,20 +57,18 @@ public class TracingInterceptor implements Interceptor {
         this.decorators = new ArrayList<>(decorators);
     }
 
-    /**
-     * Add tracing interceptors to client builder.
-     *
-     * @param okBuilder client builder
-     * @param tracer tracer
-     * @param decorators span decorators
-     * @return client builder with added tracing interceptor
-     */
-    public static OkHttpClient.Builder addTracing(OkHttpClient.Builder okBuilder,
-                                                  Tracer tracer, List<OkHttpClientSpanDecorator> decorators) {
+    public static OkHttpClient addTracing(OkHttpClient.Builder builder, Tracer tracer) {
+        return TracingInterceptor.addTracing(builder, tracer,
+                Collections.singletonList(OkHttpClientSpanDecorator.STANDARD_TAGS));
+    }
 
+    public static OkHttpClient addTracing(OkHttpClient.Builder builder,
+                                          Tracer tracer, List<OkHttpClientSpanDecorator> decorators) {
         TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer, decorators);
-        return okBuilder.addInterceptor(tracingInterceptor)
-                    .addNetworkInterceptor(tracingInterceptor);
+        builder.interceptors().add(0, tracingInterceptor);
+        builder.networkInterceptors().add(0, tracingInterceptor);
+        builder.dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), tracer)));
+        return builder.build();
     }
 
     @Override
