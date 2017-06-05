@@ -6,7 +6,7 @@ OpenTracing instrumentation for OkHttp client.
 ## Configuration
 Preferred way how to instrument OkHttpClient is to use `TracingCallFactory`:
 ```java
-Call.Factory callFactory = new TracingCallFactory(okHttpClient, tracer);
+Call.Factory client = new TracingCallFactory(okHttpClient, tracer);
 client.newCall(request)...
 ```
 or use OkHttpClient directly. However when doing multiple async requests simultaneously, parent spans created
