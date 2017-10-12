@@ -45,7 +45,7 @@ public class TracingCallFactory implements Call.Factory {
         try {
             scope = tracer.buildSpan(request.method())
                     .withTag(Tags.COMPONENT.getKey(), COMPONENT_NAME)
-                    .startActive(true);
+                    .startActive(false);
 
             /**
              * In case of exception network interceptor is not called
@@ -57,7 +57,7 @@ public class TracingCallFactory implements Call.Factory {
             okBuilder.interceptors().add(0, new Interceptor() {
                 @Override
                 public Response intercept(Chain chain) throws IOException {
-                    Scope activeInterceptorSpan = tracer.scopeManager().activate(finalScope.span(), false);
+                    Scope activeInterceptorSpan = tracer.scopeManager().activate(finalScope.span(), true);
                     try {
                         return chain.proceed(chain.request());
                     } catch (Exception ex) {

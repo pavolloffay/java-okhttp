@@ -1,6 +1,7 @@
 package io.opentracing.contrib.okhttp3;
 
 import io.opentracing.Scope;
+import io.opentracing.contrib.concurrent.TracedExecutorService;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -66,7 +67,7 @@ public class TracingInterceptor implements Interceptor {
         TracingInterceptor tracingInterceptor = new TracingInterceptor(tracer, decorators);
         builder.interceptors().add(0, tracingInterceptor);
         builder.networkInterceptors().add(0, tracingInterceptor);
-        builder.dispatcher(new Dispatcher(new TracingExecutorService(Executors.newFixedThreadPool(10), tracer)));
+        builder.dispatcher(new Dispatcher(new TracedExecutorService(Executors.newFixedThreadPool(10), tracer)));
         return builder.build();
     }
 
